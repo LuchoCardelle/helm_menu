@@ -1,294 +1,390 @@
 #!/bin/bash
 
-# Versión del script
-VERSION="1.1.1"
-
-# Definición de colores
-ROJO='\033[0;31m'
-VERDE='\033[0;32m'
-AMARILLO='\033[0;33m'
-AZUL='\033[0;34m'
-BLANCO='\033[0;37m'
-RESET='\033[0m' # Sin color
-
-# Verificar si se ha pasado un argumento para el namespace
-if [ -z "$1" ]; then
-    echo -e "${ROJO}Error: Debe proporcionar un namespace como argumento.${RESET}"
-    echo -e "${BLANCO}Uso: $0 <namespace>${RESET}"
-    exit 1
-fi
-
-NAMESPACE="$1"
+# Colores para la interfaz
+NC='\033[0m' # Sin color
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[0;33m'
+BLUE='\033[0;34m'
+CYAN='\033[0;36m'
+WHITE='\033[1;37m'
 
 # Verificar si las herramientas necesarias están instaladas
-for cmd in kubectl helm jq; do
-    if ! command -v $cmd &> /dev/null; then
-        echo -e "${ROJO}Error: El comando '$cmd' no está instalado.${RESET}"
+check_tools() {
+    for tool in git helm kubectl curl; do
+        if ! command -v $tool &> /dev/null; then
+            echo -e "${RED}Error: $tool no está instalado. Por favor instálalo y vuelve a intentarlo.${NC}"
+            exit 1
+        fi
+    done
+}
+
+# Listar namespaces
+list_namespaces() {
+    clear
+    kubectl get namespaces --no-headers -o custom-columns=":metadata.name"
+    echo
+}
+
+# Validar el namespace seleccionado
+validate_namespace() {
+    local namespace=$1
+    kubectl get namespace $namespace &> /dev/null
+    if [ $? -ne 0 ]; then
+        echo -e "${RED}El namespace '$namespace' no existe. Por favor selecciona uno válido.${NC}"
         exit 1
     fi
-done
-
-# Limpiar la pantalla
-clear
-
-# Funciones que imitan los alias, utilizando el namespace como variable
-kg() {
-    kubectl get pod -o wide --namespace "$NAMESPACE"
 }
 
-kt() {
-    kubectl get pod -oyaml --namespace "$NAMESPACE"
+# Opción 1: Clonar repositorios
+clone_repos() {
+    echo -e "${BLUE}Clonando repositorios...${NC}"
+    git clone git@github.com:LuchoCardelle/helm_SecretCreator.git WhiteStack/Plugin/SecretCreator
+    git clone git@github.com:LuchoCardelle/helm_ResourceRequests.git WhiteStack/Plugin/ResourceRequests
+    git clone git@github.com:LuchoCardelle/helm_ValidaPassword.git WhiteStack/Plugin/ValidaPassword
+    echo -e "${GREEN}Repositorios clonados exitosamente.${NC}"
+    echo
 }
 
-kh() {
-    helm list --namespace "$NAMESPACE"
-}
+# Opción 2: Desplegar un chart desde un repo remoto
+deploy_chart() {
+    read -p "Introduce el link del repositorio GitHub: " repo_url
+    read -p "Introduce el nombre para diferenciarlo localmente: " repo_name
 
-ks() {
-    kubectl get secret --namespace "$NAMESPACE"
-}
-
-kr() {
-    echo -e "${AMARILLO}Listado de repositorios de Helm:${RESET}"
-    helm repo list
-}
-
-kd() {
-    while true; do
-        echo -e "${AMARILLO}Listado de charts instalados:${RESET}"
-        kh
-        echo -e "${VERDE}0.${RESET} Salir"
-        read -p "Ingrese el nombre completo del chart a desinstalar (o 0 para salir): " chart_name
-        echo
-
-        if [ "$chart_name" == "0" ]; then
-            echo -e "${VERDE}Saliendo del menú de desinstalación...${RESET}"
-            return
-        fi
-
-        # Verificar si el chart está instalado
-        if ! helm list --namespace "$NAMESPACE" -o json | jq -e --arg name "$chart_name" '.[] | select(.name == $name)' > /dev/null; then
-            echo -e "${ROJO}Error: El chart '$chart_name' no está instalado en el namespace '$NAMESPACE'.${RESET}"
-            continue
-        fi
-
-        echo -e "${AMARILLO}Desinstalando chart '$chart_name' en namespace '$NAMESPACE'...${RESET}"
-        helm uninstall "$chart_name" --namespace "$NAMESPACE" || { echo -e "${ROJO}Error al desinstalar el chart.${RESET}"; continue; }
-        return
-    done
-}
-
-kdr() {
-    while true; do
-        echo -e "${AMARILLO}Listado de repositorios de Helm:${RESET}"
-        kr
-        echo -e "${VERDE}0.${RESET} Salir"
-        read -p "Ingrese el nombre del repositorio a eliminar (o 0 para salir): " repo_name
-        echo
-
-        if [ "$repo_name" == "0" ]; then
-            echo -e "${VERDE}Saliendo del menú de eliminación de repositorios...${RESET}"
-            return
-        fi
-
-        # Verificar si el repositorio está listado
-        if ! helm repo list -o json | jq -e --arg name "$repo_name" '.[] | select(.name == $name)' > /dev/null; then
-            echo -e "${ROJO}Error: El repositorio '$repo_name' no está en la lista de repositorios.${RESET}"
-            continue
-        fi
-
-        echo -e "${AMARILLO}Eliminando repositorio '$repo_name'...${RESET}"
-        helm repo remove "$repo_name" || { echo -e "${ROJO}Error al eliminar el repositorio.${RESET}"; continue; }
-        return
-    done
-}
-
-kra() {
-    read -p "Ingrese el nombre para el repositorio local de este chart: " repo_name
-    read -p "Ingrese el enlace de GitHub del repositorio (por ejemplo, https://github.com/usuario/repositorio): " github_url
-    if [ -z "$repo_name" ] || [ -z "$github_url" ]; then
-        echo -e "${ROJO}Error: Debe ingresar tanto el nombre del repositorio como el enlace de GitHub.${RESET}"
-        return
-    fi
-    echo -e "${AMARILLO}Agregando repositorio de Helm '$repo_name' desde '$github_url'...${RESET}"
-    helm repo add "$repo_name" "$github_url" || { echo -e "${ROJO}Error al agregar el repositorio.${RESET}"; return; }
-    echo -e "${AMARILLO}Actualizando repositorios de Helm...${RESET}"
+    echo -e "${BLUE}Añadiendo el repositorio Helm...${NC}"
+    helm repo add $repo_name $repo_url
     helm repo update
 
-    echo -e "${AMARILLO}Buscando charts en el repositorio '$repo_name':${RESET}"
-    helm search repo "$repo_name"
-
-    echo -e "${AMARILLO}Copie y pegue el nombre del chart tal como aparece en la columna 'NAME' del resultado de la búsqueda.${RESET}"
-    read -p "Ingrese el nombre del chart a instalar: " chart_name
-    if [ -z "$chart_name" ]; then
-        echo -e "${ROJO}Error: No se ingresó ningún nombre de chart.${RESET}"
-        return
-    fi
-
-    echo -e "${AMARILLO}Ingrese un nombre para la instalación del chart (puede ser cualquier nombre que elija):${RESET}"
-    read -p "Nombre para la instalación: " install_name
-    if [ -z "$install_name" ]; then
-        echo -e "${ROJO}Error: No se ingresó ningún nombre para la instalación.${RESET}"
-        return
-    fi
-
-    echo -e "${AMARILLO}Ingrese el nodo para la afinidad del chart (por ejemplo, 'nodo03') o presione Enter para continuar sin definir el nodo de afinidad:${RESET}"
-    read -p "Nodo de afinidad: " node_affinity_node
-
-    echo -e "${AMARILLO}Ingrese la cantidad de réplicas que se desplegarán o presione Enter para usar el valor predeterminado '1':${RESET}"
-    read -p "Cantidad de réplicas: " replicas
-    replicas="${replicas:-1}"  # Valor por defecto
-    if ! [[ "$replicas" =~ ^[0-9]+$ ]]; then
-        echo -e "${ROJO}Error: Debe ingresar un número válido de réplicas.${RESET}"
-        return
-    fi
-
-    # Confirmar el comando a ejecutar
-    echo -e "${AMARILLO}El siguiente comando se ejecutará:${RESET}"
-    if [ -n "$node_affinity_node" ]; then
-        echo -e "${VERDE}helm install ${install_name} ${chart_name} --namespace ${NAMESPACE} --set nodeAffinity.node=${node_affinity_node},replicaCount=${replicas}${RESET}"
-    else
-        echo -e "${VERDE}helm install ${install_name} ${chart_name} --namespace ${NAMESPACE} --set replicaCount=${replicas}${RESET}"
-    fi
-    read -n 1 -p "¿Desea continuar con la instalación? (y/n): " confirm
+    echo -e "${YELLOW}Repositorios Helm disponibles:${NC}"
+    helm repo list
     echo
 
-    if [ "$confirm" != "y" ]; then
-        echo -e "${VERDE}Operación cancelada.${RESET}"
-        return
-    fi
+    echo -e "${YELLOW}Charts disponibles en los repositorios:${NC}"
+    helm search repo
+    echo
 
-    echo -e "${AMARILLO}Instalando chart '$chart_name' como '$install_name' en namespace '$NAMESPACE'${RESET}"
-    if [ -n "$node_affinity_node" ]; then
-        helm install "$install_name" "$chart_name" --namespace "$NAMESPACE" --set nodeAffinity.node="$node_affinity_node",replicaCount="$replicas" || { echo -e "${ROJO}Error al instalar el chart.${RESET}"; }
+    read -p "Introduce el nombre del chart que deseas instalar (incluye el nombre del repositorio, ej. repo/chart): " chart_name
+    read -p "Introduce el nombre para esta instalación: " install_name
+    read -p "¿Vas a usar la función 'nodoAffinity'? (si/no): " use_affinity
+
+    if [ "$use_affinity" == "si" ]; then
+        echo -e "${YELLOW}Nodos disponibles:${NC}"
+        kubectl get nodes -o custom-columns=NAME:.metadata.name
+        read -p "Introduce el nombre del nodo elegido: " node_name
+        affinity_option="--set nodeAffinity.node=$node_name"
     else
-        helm install "$install_name" "$chart_name" --namespace "$NAMESPACE" --set replicaCount="$replicas" || { echo -e "${ROJO}Error al instalar el chart.${RESET}"; }
+        affinity_option=""
     fi
+
+    read -p "Introduce la cantidad de replicas a desplegar: " replicas
+    install_command="helm install $install_name $chart_name --set replicaCount=$replicas $affinity_option --namespace $namespace"
+    echo -e "${CYAN}El comando a ejecutar es:${NC} ${WHITE}$install_command${NC}"
+    echo -e "${BLUE}Ejecutando el comando...${NC}"
+    eval $install_command
+    echo
 }
 
-# Nueva función para la opción 'a'
-verificar_resource_requests() {
-    echo -e "${AMARILLO}Listado de repositorios locales:${RESET}"
+# Opción 3: Instalar con validación de información sensible
+install_and_validate() {
+    read -p "Introduce el link del repositorio GitHub para el plugin de validación: " repo_url
+    read -p "Introduce el nombre para diferenciarlo localmente: " repo_name
+
+    echo -e "${BLUE}Añadiendo el repositorio Helm para validación...${NC}"
+    helm repo add $repo_name $repo_url
+    helm repo update
+
+    echo -e "${YELLOW}Repositorios Helm disponibles:${NC}"
     helm repo list
+    echo
 
-    echo -e "${AMARILLO}Ingrese el nombre del repositorio local para buscar los charts:${RESET}"
-    read -p "Nombre del repositorio: " repo_name
-    if [ -z "$repo_name" ]; then
-        echo -e "${ROJO}Error: Debe ingresar un nombre de repositorio.${RESET}"
-        return
+    echo -e "${YELLOW}Charts disponibles en los repositorios:${NC}"
+    helm search repo
+    echo
+
+    read -p "Introduce el nombre del chart que deseas instalar (incluye el nombre del repositorio, ej. repo/chart): " chart_name
+    read -p "Introduce el nombre para esta instalación: " install_name
+
+    read -p "¿Vas a usar la función 'ValidPassword'? (si/no): " use_ValidPassword
+    if [ "$use_ValidPassword" == "si" ]; then
+        echo -e "${YELLOW}Validando información sensible en el values.yaml...${NC}"
+        # Ejecutar validación con el plugin 'ValidaPassword'
+        echo -e "${BLUE}Ejecutando validación con el plugin 'ValidaPassword'...${NC}"
+        helm ValidaPassword $install_name --namespace $namespace
+        if [ $? -ne 0 ]; then
+            echo -e "${RED}Error: La validación con el plugin 'ValidaPassword' falló. La instalación ha sido cancelada.${NC}"
+            echo -e "${CYAN}Volviendo al menú principal...${NC}"
+	    main_menu
+            #return
+        fi
+    else
+        echo "Continúa la instalación del chart"
     fi
 
-    # Verificar si el repositorio está listado
-    if ! helm repo list -o json | jq -e --arg name "$repo_name" '.[] | select(.name == $name)' > /dev/null; then
-        echo -e "${ROJO}Error: El repositorio '$repo_name' no está en la lista de repositorios.${RESET}"
-        return
+    read -p "¿Vas a usar la función 'nodoAffinity'? (si/no): " use_affinity
+
+    if [ "$use_affinity" == "si" ]; then
+        echo -e "${YELLOW}Nodos disponibles:${NC}"
+        kubectl get nodes -o custom-columns=NAME:.metadata.name
+        read -p "Introduce el nombre del nodo elegido: " node_name
+        affinity_option="--set nodeAffinity.node=$node_name"
+    else
+        affinity_option=""
     fi
 
-    echo -e "${AMARILLO}Buscando charts en el repositorio '$repo_name':${RESET}"
-    helm search repo "$repo_name"
+    read -p "Introduce la cantidad de replicas a desplegar: " replicas
+    install_command="helm install $install_name $chart_name --set replicaCount=$replicas $affinity_option --namespace $namespace"
+    echo -e "${CYAN}El comando a ejecutar es:${NC} ${WHITE}$install_command${NC}"
+    echo -e "${BLUE}Ejecutando el comando...${NC}"
+    eval $install_command
 
-    echo -e "${AMARILLO}Ingrese el nombre del chart para verificar los 'ResourceRequests':${RESET}"
-    read -p "Nombre del chart: " chart_name
-    if [ -z "$chart_name" ]; then
-        echo -e "${ROJO}Error: No se ingresó ningún nombre de chart.${RESET}"
-        return
-    fi
-
-    echo -e "${AMARILLO}Verificando 'ResourceRequests' para el chart '$chart_name'...${RESET}"
-    helm ResourceRequests "$chart_name" || { echo -e "${ROJO}Error al verificar 'ResourceRequests'.${RESET}"; }
+    echo
 }
 
-# Función para mostrar el menú con colores
-mostrar_menu() {
-    echo -e "${AZUL}Seleccione una opción (Versión $VERSION):${RESET}"
-    echo -e "${VERDE}1.${RESET} Agregar un Helm repo desde un enlace de GitHub | listar sus charts | desplegar el chart"
-    echo -e "${VERDE}2.${RESET} Listar pods en namespace '$NAMESPACE' (equivalente a 'kg')"
-    echo -e "${VERDE}3.${RESET} Listar secretos en namespace '$NAMESPACE' (equivalente a 'ks')"
-    echo -e "${VERDE}4.${RESET} Listar charts instalados en namespace '$NAMESPACE' (equivalente a 'kh')"
-    echo -e "${VERDE}5.${RESET} Listar repositorios de Helm (equivalente a 'kr')"
-    echo -e "${VERDE}6.${RESET} Mostrar pods en formato YAML en namespace '$NAMESPACE' (equivalente a 'kt')"
-    echo -e "${VERDE}7.${RESET} Desinstalar un chart en namespace '$NAMESPACE' (equivalente a 'kd')"
-    echo -e "${VERDE}8.${RESET} Eliminar un repositorio de Helm"
-    echo -e "${VERDE}a.${RESET} Verificar 'ResourceRequests' del chart antes de instalarlo"
-    echo -e "${VERDE}0.${RESET} Salir"
-}
-
-# Función para mostrar el submenú de la opción 1
-sub_menu_opcion_1() {
+# Opción 4: Listar y comprobar
+list_and_check() {
     while true; do
-        echo -e "${AMARILLO}Seleccione una subopción para 'Agregar un Helm repo':${RESET}"
-        echo -e "${VERDE}0.${RESET} Volver al menú principal"
-        echo -e "${VERDE}1.${RESET} Agregar repositorio y desplegar chart"
-        read -p "Seleccione una subopción: " subopcion
+        echo -e "${CYAN}Selecciona una opción:${NC}"
+        echo -e "A. Listar pods de un namespace"
+        echo -e "B. Listar pods en formato YAML en un namespace"
+        echo -e "C. Listar secretos de un namespace"
+        echo -e "D. Listar charts instalados de un namespace"
+        echo -e "E. Listar repositorios de Helm"
+        echo -e "0. Volver al menú principal"
         echo
+        read -p "Introduce tu opción (A/B/C/D/E/0): " option
 
-        case $subopcion in
+        case $option in
+            A)
+                echo -e "${YELLOW}Listando pods en el namespace $namespace:${NC}"
+                kubectl get pods -o wide -n $namespace
+                ;;
+            B)
+                echo -e "${YELLOW}Listando pods en formato YAML en el namespace $namespace:${NC}"
+                kubectl get pods -n $namespace -o yaml
+                ;;
+            C)
+                echo -e "${YELLOW}Listando secretos en el namespace $namespace:${NC}"
+                kubectl get secrets -n $namespace
+                ;;
+            D)
+                echo -e "${YELLOW}Listando charts instalados en el namespace $namespace:${NC}"
+                helm list -n $namespace
+                ;;
+            E)
+                echo -e "${YELLOW}Listando repositorios de Helm:${NC}"
+                helm repo list
+                ;;
             0)
                 return
                 ;;
-            1)
-                kra
+            *)
+                echo -e "${RED}Opción inválida.${NC}"
+                ;;
+        esac
+        echo
+    done
+}
+
+# Opción 5: Limpieza / Eliminar
+cleanup_and_remove() {
+    while true; do
+        echo -e "${CYAN}Selecciona una opción:${NC}"
+        echo -e "A. Desinstalar un chart en namespace"
+        echo -e "B. Eliminar un repositorio de Helm"
+        echo -e "C. Eliminar un secret"
+        echo -e "0. Volver al menú principal"
+        echo
+        read -p "Introduce tu opción (A/B/C/0): " option
+
+        case $option in
+            A)
+                while true; do
+                    echo -e "${YELLOW}Charts instalados en el namespace $namespace:${NC}"
+                    helm list -n $namespace
+                    echo
+                    read -p "Introduce el nombre del chart a desinstalar (o '0' para volver): " chart_to_delete
+                    if [ "$chart_to_delete" == "0" ];then
+                        break
+                    fi
+                    echo -e "${BLUE}Desinstalando el chart $chart_to_delete...${NC}"
+                    helm uninstall $chart_to_delete -n $namespace
+                    echo
+                done
+                ;;
+            B)
+                while true; do
+                    echo -e "${YELLOW}Repositorios Helm disponibles:${NC}"
+                    helm repo list
+                    echo
+                    read -p "Introduce el nombre del repositorio a eliminar (o '0' para volver): " repo_to_delete
+                    if [ "$repo_to_delete" == "0" ];then
+                        break
+                    fi
+                    echo -e "${BLUE}Eliminando el repositorio $repo_to_delete...${NC}"
+                    helm repo remove $repo_to_delete
+                    echo
+                done
+                ;;
+            C)
+                while true; do
+                    echo -e "${YELLOW}Secrets disponibles en el namespace $namespace:${NC}"
+                    kubectl get secrets -n $namespace
+                    echo
+                    read -p "Introduce el nombre del secret a eliminar (o '0' para volver): " secret_to_delete
+                    if [ "$secret_to_delete" == "0" ];then
+                        break
+                    fi
+                    echo -e "${BLUE}Eliminando el secret $secret_to_delete...${NC}"
+                    kubectl delete secret $secret_to_delete -n $namespace
+                    echo
+                done
+                ;;
+            0)
+                return
                 ;;
             *)
-                echo -e "${ROJO}Opción inválida. Por favor, seleccione 0 o 1.${RESET}"
+                echo -e "${RED}Opción inválida.${NC}"
                 ;;
         esac
     done
 }
 
-# Función para manejar la opción seleccionada
-manejar_opcion() {
-    case $1 in
-        1)
-            sub_menu_opcion_1
-            ;;
-        2)
-            echo -e "${AMARILLO}Ejecutando: kg${RESET}"
-            kg
-            ;;
-        3)
-            echo -e "${AMARILLO}Ejecutando: ks${RESET}"
-            ks
-            ;;
-        4)
-            echo -e "${AMARILLO}Ejecutando: kh${RESET}"
-            kh
-            ;;
-        5)
-            echo -e "${AMARILLO}Ejecutando: kr${RESET}"
-            kr
-            ;;
-        6)
-            echo -e "${AMARILLO}Ejecutando: kt${RESET}"
-            kt
-            ;;
-        7)
-            echo -e "${AMARILLO}Ejecutando: kd${RESET}"
-            kd
-            ;;
-        8)
-            echo -e "${AMARILLO}Ejecutando: kdr${RESET}"
-            kdr
-            ;;
-        a)
-            echo -e "${AMARILLO}Ejecutando: verificar_resource_requests${RESET}"
-            verificar_resource_requests
-            ;;
-        0)
-            echo -e "${VERDE}Saliendo...${RESET}"
-            exit 0
-            ;;
-        *)
-            echo -e "${ROJO}Opción inválida. Por favor, seleccione una opción del 0 al 8 o 'a'.${RESET}"
-            ;;
-    esac
+# Opción 6: Utilización de Plugins
+manage_plugins() {
+    while true; do
+        echo -e "${CYAN}Selecciona una opción:${NC}"
+        echo -e "A. Listar plugins disponibles"
+        echo -e "B. Ejecutar un plugin sobre un local chart"
+        echo -e "C. Mostrar ayuda de un plugin"
+        echo -e "0. Volver al menú principal"
+        echo
+        read -p "Introduce tu opción (A/B/C/0): " option
+
+        case $option in
+            A)
+                echo -e "${YELLOW}Listando plugins disponibles:${NC}"
+                helm plugin list
+                ;;
+            B)
+                echo -e "${YELLOW}Lista de plugins disponibles:${NC}"
+                helm plugin list
+                echo
+                echo -e "${YELLOW}Lista de charts disponibles:${NC}"
+                helm search repo
+                echo
+                read -p "Introduce el nombre del plugin a ejecutar (o '0' para volver): " plugin_name
+                if [ "$plugin_name" == "0" ]; then
+                    break
+                fi
+                read -p "Introduce el nombre del chart (si aplica, o deja en blanco): " chart_name
+                
+                if [ -z "$chart_name" ]; then
+                    execute_command="helm $plugin_name"
+                else
+                    execute_command="helm $plugin_name $chart_name"
+                fi
+                
+                echo -e "${CYAN}El comando a ejecutar es:${NC} ${WHITE}$execute_command${NC}"
+                echo -e "${BLUE}Ejecutando el comando...${NC}"
+                eval $execute_command
+                echo
+                ;;
+            C)
+                echo -e "${YELLOW}Lista de plugins disponibles:${NC}"
+                helm plugin list
+                echo
+                read -p "Introduce el nombre del plugin para mostrar la ayuda (o '0' para volver): " plugin_name
+                if [ "$plugin_name" == "0" ]; then
+                    break
+                fi
+                echo -e "${BLUE}Mostrando ayuda para el plugin $plugin_name...${NC}"
+                helm help $plugin_name
+                echo
+                ;;
+            0)
+                return
+                ;;
+            *)
+                echo -e "${RED}Opción inválida.${NC}"
+                ;;
+        esac
+    done
 }
 
-# Bucle principal del script
-while true; do
-    mostrar_menu
-    read -p "Seleccione una opción: " opcion
-    echo
-    manejar_opcion "$opcion"
-done
 
+# Opción 7: Mostrar leyenda
+add_repo() {
+    read -p "Introduce el link del repositorio GitHub: (o '0' para volver)" repo_url
+     if [ "$repo_url" == "0" ]; then
+	main_menu
+     fi
+
+    read -p "Introduce el nombre para diferenciarlo localmente: " repo_name
+
+    echo -e "${BLUE}Añadiendo el repositorio Helm...${NC}"
+    helm repo add $repo_name $repo_url
+    helm repo update
+
+    echo -e "${YELLOW}Repositorios Helm disponibles:${NC}"
+    helm repo list
+    echo
+}
+
+# Menú principal
+main_menu() {
+    while true; do
+        echo -e "${CYAN}Selecciona una opción:${NC}"
+        echo -e "1. Instalar plugins [ ResourceRequests | SecretCreator | ValidaPassword ]"
+        echo -e "2. Instalar [ repo | chart | affinityNode | replicas | con secret ]"
+        echo -e "3. Instalar [ repo | chart | affinityNode | replicas | plugin valida info sensible del values ]"
+        echo -e "4. Listar y comprobar"
+        echo -e "5. Limpieza / Eliminar"
+        echo -e "6. Utilización de Plugins"
+        echo -e "7. Tan solo agrega un nuevo repo, por si queres usar los plugins"
+        echo -e "0. Salir"
+        echo
+        read -p "Introduce tu opción (1/2/3/4/5/6/7/0): " option
+
+        case $option in
+            1)
+                clone_repos
+                ;;
+            2)
+                deploy_chart
+                ;;
+            3)
+                install_and_validate
+                # Funciones duplicadas de la opción 2
+                deploy_chart
+                ;;
+            4)
+                list_and_check
+                ;;
+            5)
+                cleanup_and_remove
+                ;;
+            6)
+                manage_plugins
+                ;;
+            7)
+                add_repo
+                ;;
+            0)
+                echo -e "${GREEN}Saliendo...${NC}"
+                exit 0
+                ;;
+            *)
+                echo -e "${RED}Opción inválida.${NC}"
+                ;;
+        esac
+    done
+}
+
+# Inicio del script
+check_tools
+echo -e "${YELLOW}Namespaces disponibles:${NC}"
+list_namespaces
+read -p "Introduce el namespace donde deseas operar: " namespace
+validate_namespace $namespace
+
+main_menu
