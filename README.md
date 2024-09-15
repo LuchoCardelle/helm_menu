@@ -2,6 +2,7 @@
 ![image](https://github.com/user-attachments/assets/946461ab-9059-4b2f-bcb8-4a1c438ed2e1)
 
 
+ChatGPT :
 ¡Gracias por compartir el script! Parece ser un script Bash bastante completo para gestionar Helm charts en un clúster de Kubernetes. Aquí tienes un resumen de lo que hace cada sección:
 Configuración de Colores: Define varios colores para la salida en terminal, mejorando la legibilidad de los mensajes.
 check_tools: Verifica que las herramientas necesarias (git, helm, kubectl, curl) estén instaladas. Si falta alguna, el script se detiene con un mensaje de error.
