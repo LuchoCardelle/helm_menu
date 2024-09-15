@@ -39,11 +39,18 @@ validate_namespace() {
 # Opción 1: Clonar repositorios
 clone_repos() {
     echo -e "${BLUE}Clonando repositorios...${NC}"
-    git clone git@github.com:LuchoCardelle/helm_SecretCreator.git WhiteStack/Plugin/SecretCreator
-    git clone git@github.com:LuchoCardelle/helm_ResourceRequests.git WhiteStack/Plugin/ResourceRequests
-    git clone git@github.com:LuchoCardelle/helm_ValidaPassword.git WhiteStack/Plugin/ValidaPassword
+    git clone https://github.com/LuchoCardelle/helm_ValidaPassword.git WhiteStack/Plugin/ValidaPassword
+    git clone https://github.com/LuchoCardelle/helm_ResourceRequests.git WhiteStack/Plugin/ResourceRequests
+    git clone https://github.com/LuchoCardelle/helm_SecretCreator.git WhiteStack/Plugin/SecretCreator
     echo -e "${GREEN}Repositorios clonados exitosamente.${NC}"
+
+    echo -e "${BLUE}Instalando plugins en Helm...${NC}"
+    helm plugin install WhiteStack/Plugin/ValidaPassword
+    helm plugin install WhiteStack/Plugin/ResourceRequests
+    helm plugin install WhiteStack/Plugin/SecretCreator
+    echo -e "${GREEN}Plugins instalados exitosamente.${NC}"
     echo
+
 }
 
 # Opción 2: Desplegar un chart desde un repo remoto
