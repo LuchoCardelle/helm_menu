@@ -39,9 +39,9 @@ validate_namespace() {
 # Opción 1: Clonar repositorios
 clone_repos() {
     echo -e "${BLUE}Clonando repositorios...${NC}"
-    git clone https://github.com/LuchoCardelle/helm_ValidaPassword.git WhiteStack/Plugin/ValidaPassword
-    git clone https://github.com/LuchoCardelle/helm_ResourceRequests.git WhiteStack/Plugin/ResourceRequests
-    git clone https://github.com/LuchoCardelle/helm_SecretCreator.git WhiteStack/Plugin/SecretCreator
+    git clone https://luchocardelle.github.io/helm_ValidaPassword/ WhiteStack/Plugin/ValidaPassword
+    git clone https://luchocardelle.github.io/helm_ResourceRequests/ WhiteStack/Plugin/ResourceRequests
+    git clone https://luchocardelle.github.io/helm_SecretCreator/ WhiteStack/Plugin/SecretCreator
     echo -e "${GREEN}Repositorios clonados exitosamente.${NC}"
 
     echo -e "${BLUE}Instalando plugins en Helm...${NC}"
